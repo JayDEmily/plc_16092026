@@ -1,21 +1,19 @@
 import { createProjectSurface } from "./f2_chatgpt_surface_control/surface_control.mjs";
 
 const COMPLETION_FOOTER = "complete";
+const PROJECT_INSTRUCTIONS = "Complete the exact task in the user prompt. End your response with a final line exactly equal to:\ncomplete";
+const POLL_MS = 10000;
+const DEADLINE_MS = 30000;
+
 let a;
-let response;
+let b;
+let aResponse;
 let aStarted = false;
 let bStarted = false;
-let aDeadline;
-let aReloadUrl;
 
-function requireJob(job, label) {
-  if (!job || typeof job !== "object" || Array.isArray(job)) throw new Error(`${label} job must be an object`);
-  const keys = ["projectName", "projectInstructions", "prompt"];
-  for (const key of keys) {
-    if (typeof job[key] !== "string") throw new Error(`${label}.${key} must be a string`);
-  }
-  if (!job.projectName) throw new Error(`${label}.projectName must be nonempty`);
-  return job;
+function requireBrief(brief, label) {
+  if (typeof brief !== "string" || brief.length === 0) throw new Error(`${label} must be a nonempty string`);
+  return brief;
 }
 
 async function submit(surface, text) {
@@ -33,9 +31,9 @@ async function submit(surface, text) {
   await surface.composer.press("Enter", { timeoutMs: 15000 });
 }
 
-async function prepared(f1, surface, job, expectedText) {
+async function prepared(f1, surface, projectName, expectedText) {
   if (surface !== globalThis.ccoF2 || surface.f1 !== f1 ||
-      surface.projectName !== job.projectName || surface.memoryMode !== "PROJECT_ONLY" ||
+      surface.projectName !== projectName || surface.memoryMode !== "PROJECT_ONLY" ||
       !surface.composer || await surface.tab.url() !== surface.projectUrl ||
       await surface.tab.playwright.getByRole("heading", { name: "No chats yet", exact: true }).count() !== 1 ||
       !(await surface.composer.evaluate((el, expected) => el.textContent === "" ||
@@ -46,72 +44,81 @@ async function prepared(f1, surface, job, expectedText) {
   return surface;
 }
 
-export async function startA(f1, job, preparedSurface) {
-  if (aStarted) throw new Error("Worker A has already been started");
-  job = requireJob(job, "workerA");
-  aStarted = true;
-  const surface = preparedSurface ? await prepared(f1, preparedSurface, job, job.prompt) :
+async function startWorker(f1, projectName, prompt, preparedSurface) {
+  const surface = preparedSurface ? await prepared(f1, preparedSurface, projectName, prompt) :
     await createProjectSurface({
       f1,
-      projectName: job.projectName,
+      projectName,
       memoryMode: "PROJECT_ONLY",
-      projectInstructions: job.projectInstructions,
+      projectInstructions: PROJECT_INSTRUCTIONS,
     });
-  await submit(surface, job.prompt);
-  a = surface;
-  aDeadline = Date.now() + 30000;
-  await a.f1.preserveTab(a.tab);
+  await submit(surface, prompt);
+  await f1.preserveTab(surface.tab);
+  return { surface, deadline: Date.now() + DEADLINE_MS, reloadUrl: undefined };
 }
 
-export async function pollA() {
-  if (!a) throw new Error("Worker A has not been submitted");
-  await new Promise(resolve => setTimeout(resolve, 10000));
-  const expired = Date.now() >= aDeadline;
-  if (expired && aReloadUrl === undefined) {
-    const url = new URL(await a.tab.url());
+async function pollWorker(worker, label) {
+  if (!worker) throw new Error(`${label} has not been submitted`);
+  await new Promise(resolve => setTimeout(resolve, POLL_MS));
+  const expired = Date.now() >= worker.deadline;
+  const surface = worker.surface;
+
+  if (expired && worker.reloadUrl === undefined) {
+    const url = new URL(await surface.tab.url());
     if (url.origin !== "https://chatgpt.com" || !url.pathname.includes("/c/")) {
-      throw new Error("Worker A has no saved conversation URL; do not resubmit");
+      throw new Error(`${label} has no saved conversation URL; do not resubmit`);
     }
-    aReloadUrl = url.href;
-    await a.tab.goto(aReloadUrl);
-    await a.f1.preserveTab(a.tab);
-    return "WAITING";
+    worker.reloadUrl = url.href;
+    await surface.tab.goto(worker.reloadUrl);
+    await surface.f1.preserveTab(surface.tab);
+    return { status: "WAITING" };
   }
-  if (aReloadUrl !== undefined) {
-    if (await a.tab.url() !== aReloadUrl) throw new Error("Worker A left the saved conversation after refresh");
-    await a.tab.playwright.locator('[data-message-author-role="assistant"]').last()
+
+  if (worker.reloadUrl !== undefined) {
+    if (await surface.tab.url() !== worker.reloadUrl) throw new Error(`${label} left the saved conversation after refresh`);
+    await surface.tab.playwright.locator('[data-message-author-role="assistant"]').last()
       .waitFor({ state: "visible", timeoutMs: 15000 });
   }
-  const assistant = a.tab.playwright.locator('[data-message-author-role="assistant"]').last();
+
+  const assistant = surface.tab.playwright.locator('[data-message-author-role="assistant"]').last();
+  let latest;
   let status = "WAITING";
   if (await assistant.count()) {
     const markdown = assistant.locator(".markdown");
-    const latest = await (await markdown.count() === 1 ? markdown : assistant).innerText();
-    const generating = await a.tab.playwright.getByRole("button", { name: "Stop answering", exact: true }).isVisible();
+    latest = await (await markdown.count() === 1 ? markdown : assistant).innerText();
+    const generating = await surface.tab.playwright.getByRole("button", { name: "Stop answering", exact: true }).isVisible();
     const lines = latest.replace(/\r\n/g, "\n").split("\n");
-    if (!generating && lines.at(-1) === COMPLETION_FOOTER) {
-      response = latest;
-      status = "COMPLETE";
-    }
+    if (!generating && lines.at(-1) === COMPLETION_FOOTER) status = "COMPLETE";
   }
-  await a.f1.preserveTab(a.tab);
-  if (expired && status !== "COMPLETE") throw new Error("Worker A completion timed out after 30 seconds; do not resubmit");
-  return status;
+
+  await surface.f1.preserveTab(surface.tab);
+  if (expired && status !== "COMPLETE") throw new Error(`${label} completion timed out after 30 seconds; do not resubmit`);
+  return { status, latest };
 }
 
-export async function sendB(f1, job, preparedSurface) {
-  if (response === undefined) throw new Error("pollA() has not produced COMPLETE");
+export async function startA(f1, brief, preparedSurface) {
+  if (aStarted) throw new Error("Worker A has already been started");
+  brief = requireBrief(brief, "WORKER_A_BRIEF");
+  aStarted = true;
+  a = await startWorker(f1, "Project A", brief, preparedSurface);
+}
+
+export async function pollA() {
+  const result = await pollWorker(a, "Worker A");
+  if (result.status === "COMPLETE") aResponse = result.latest;
+  return result.status;
+}
+
+export async function startB(f1, brief, preparedSurface) {
+  if (aResponse === undefined) throw new Error("pollA() has not produced COMPLETE");
   if (bStarted) throw new Error("Worker B has already been started");
-  job = requireJob(job, "workerB");
+  brief = requireBrief(brief, "WORKER_B_BRIEF");
   bStarted = true;
-  const prompt = `${job.prompt}\n\nWORKER_A_RESPONSE:\n${response}`;
-  const b = preparedSurface ? await prepared(f1, preparedSurface, job, prompt) :
-    await createProjectSurface({
-      f1,
-      projectName: job.projectName,
-      memoryMode: "PROJECT_ONLY",
-      projectInstructions: job.projectInstructions,
-    });
-  await submit(b, prompt);
-  await f1.preserveTab(b.tab);
+  const prompt = `${brief}\n\nWORKER_A_RESPONSE:\n${aResponse}`;
+  b = await startWorker(f1, "Project B", prompt, preparedSurface);
+}
+
+export async function pollB() {
+  const result = await pollWorker(b, "Worker B");
+  return result.status;
 }
