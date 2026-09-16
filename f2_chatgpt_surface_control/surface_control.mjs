@@ -80,7 +80,8 @@ export async function createProjectSurface({ f1, projectName, memoryMode, projec
   const name = creation.getByRole("textbox", { name: "Project name", exact: true });
   await (await one(name)).fill(projectName, { timeoutMs: TIMEOUT });
   await exactValue(name, projectName, "Project name");
-  await click(creation.getByRole("button", { name: "Default memory", exact: true }));
+  await (await one(creation.getByRole("button", { name: "Default memory", exact: true })))
+    .press("Enter", { timeoutMs: TIMEOUT });
   const option = creation.getByRole("menuitemradio").filter({
     has: p.getByRole("heading", { name: MEMORY[memoryMode], exact: true }),
   });
