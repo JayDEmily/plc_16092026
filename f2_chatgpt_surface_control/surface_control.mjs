@@ -36,7 +36,10 @@ export async function openSidebar(tab) {
     await (await one(p.getByRole("textbox", { name: "Chat with ChatGPT", exact: true })))
       .press("Control+Shift+s", { timeoutMs: TIMEOUT });
   }
-  await one(newProject);
+  // This button has opacity: 0 until hover/focus; wait for DOM presence.
+  await newProject.waitFor({ state: "attached", timeoutMs: TIMEOUT });
+  requireCondition(await newProject.count() === 1 && await newProject.isEnabled(),
+    "New project control is unavailable or ambiguous");
 }
 
 export async function createProjectSurface({ f1, projectName, memoryMode, projectInstructions }) {
@@ -74,7 +77,8 @@ export async function createProjectSurface({ f1, projectName, memoryMode, projec
       await f1.closeTab(tab, { authorized: true });
     }
   }
-  await click(p.getByRole("button", { name: "New project", exact: true }));
+  await p.getByRole("button", { name: "New project", exact: true })
+    .press("Enter", { timeoutMs: TIMEOUT });
 
   const creation = p.getByRole("dialog", { name: "Create project", exact: true });
   const name = creation.getByRole("textbox", { name: "Project name", exact: true });
