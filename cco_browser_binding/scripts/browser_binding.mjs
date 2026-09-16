@@ -15,7 +15,7 @@ export async function bootstrap(resolution) {
   let agent;
   try {
     const identity = resolution.runtime_identity;
-    const packagePath = dirname(dirname(identity.runtime_client_path));
+    const packagePath = dirname(dirname(resolve(identity.runtime_client_path)));
     const manifestPath = join(packagePath, ".codex-plugin", "plugin.json");
     const clientPath = join(packagePath, "scripts", "browser-client.mjs");
     const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
