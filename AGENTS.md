@@ -41,7 +41,9 @@ Resolve both file URLs from this repository root; do not import another checkout
 5. Call `await handoff.pollA()` with `timeout_ms: 45000` and report its return value.
    `WAITING` authorises only another separate step-5 call; `COMPLETE` advances to step 6.
    A has a 30-second completion deadline. At the deadline, pollA reloads the saved
-   conversation once to check for a stale streaming view. A deadline error stops the run; do not resubmit.
+   conversation once and returns `WAITING` without reading the response in that call.
+   The next separate poll waits 10 seconds, verifies the saved conversation URL,
+   and reads the response without refreshing again. If incomplete, it stops with a deadline error; do not resubmit.
 6. Call `await handoff.sendB(f1)` once with `timeout_ms: 45000`.
    Normal return is `undefined`; it means the sample is finished.
 

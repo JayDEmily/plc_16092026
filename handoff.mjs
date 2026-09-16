@@ -7,6 +7,7 @@ let response;
 let aStarted = false;
 let bStarted = false;
 let aDeadline;
+let aReloadUrl;
 
 async function submit(surface, text) {
   await surface.composer.fill(text);
@@ -57,9 +58,19 @@ export async function pollA() {
   await new Promise(resolve => setTimeout(resolve, 10000));
   const expired = Date.now() >= aDeadline;
   // A finished response can remain stuck in the page's streaming view.
-  // Reload the saved conversation once at the deadline; never resubmit.
-  if (expired) {
-    await a.tab.goto(await a.tab.url());
+  // Refresh once, then read in the next separate poll call.
+  if (expired && aReloadUrl === undefined) {
+    const url = new URL(await a.tab.url());
+    if (url.origin !== "https://chatgpt.com" || !url.pathname.includes("/c/")) {
+      throw new Error("Project A has no saved conversation URL; do not resubmit");
+    }
+    aReloadUrl = url.href;
+    await a.tab.goto(aReloadUrl);
+    await a.f1.preserveTab(a.tab);
+    return "WAITING";
+  }
+  if (aReloadUrl !== undefined) {
+    if (await a.tab.url() !== aReloadUrl) throw new Error("Project A left the saved conversation after refresh");
     await a.tab.playwright.locator('[data-message-author-role="assistant"]').last()
       .waitFor({ state: "visible", timeoutMs: 15000 });
   }
