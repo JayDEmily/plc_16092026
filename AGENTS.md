@@ -22,3 +22,29 @@ Run bootstrap and selectChrome in separate trusted Codex Node REPL calls, each w
 Selection returns a Browser; report f1.browserIdentity, not an assumed array or literal PASS result.
 Do not copy a prior run's browser IDs, resolver JSON or live controller into a new run.
 A timeout stops the run; it does not authorise reset, rebootstrap, retry or resubmission.
+
+## Cat A → B sample
+
+This sample asks Project A to describe a cat, then sends its exact response to Project B.
+There is no dog prompt in this sample.
+Use the same trusted Node REPL for all steps below. Each numbered call is separate.
+Resolve both file URLs from this repository root; do not import another checkout.
+
+1. After the successful resolver run, retain its exact JSON as `resolution`.
+   Import `cco_browser_binding/scripts/browser_binding.mjs` as `binding` and
+   `handoff.mjs` as `handoff`. Require `typeof binding.bootstrap === "function"`
+   and all three `handoff.startA`, `handoff.pollA`, `handoff.sendB` to be functions.
+2. Call `const f1 = await binding.bootstrap(resolution)` with `timeout_ms: 45000`.
+3. Call `await f1.selectChrome()` with `timeout_ms: 45000`, then report `f1.browserIdentity`.
+4. Call `await handoff.startA(f1)` once with `timeout_ms: 45000`.
+   Normal return is `undefined`; it means advance to step 5.
+5. Call `await handoff.pollA()` with `timeout_ms: 45000` and report its return value.
+   `WAITING` authorises only another separate step-5 call; `COMPLETE` advances to step 6.
+6. Call `await handoff.sendB(f1)` once with `timeout_ms: 45000`.
+   Normal return is `undefined`; it means the sample is finished.
+
+Never call `binding.startA`: the binding exports bootstrap, while handoff exports the sample operations.
+Any other result, timeout or error stops the run. Do not reset, re-import to clear guards,
+or repeat a submission. In a repair job, stop execution, diagnose and repair the cause;
+before continuing, establish the last completed step and whether any submission occurred.
+Never retry an ambiguous submission.
