@@ -48,14 +48,21 @@ export async function startA(f1, preparedSurface) {
     await createProjectSurface({ f1, projectName: "Project A", memoryMode: "PROJECT_ONLY", projectInstructions: instructions });
   await submit(surface, task);
   a = surface;
-  aDeadline = Date.now() + 120000;
+  aDeadline = Date.now() + 30000;
   await a.f1.preserveTab(a.tab);
 }
 
 export async function pollA() {
   if (!a) throw new Error("Project A has not been submitted");
   await new Promise(resolve => setTimeout(resolve, 10000));
-  if (Date.now() >= aDeadline) throw new Error("Project A completion timed out after 120 seconds; do not resubmit");
+  const expired = Date.now() >= aDeadline;
+  // A finished response can remain stuck in the page's streaming view.
+  // Reload the saved conversation once at the deadline; never resubmit.
+  if (expired) {
+    await a.tab.goto(await a.tab.url());
+    await a.tab.playwright.locator('[data-message-author-role="assistant"]').last()
+      .waitFor({ state: "visible", timeoutMs: 15000 });
+  }
   const assistant = a.tab.playwright.locator('[data-message-author-role="assistant"]').last();
   let status = "WAITING";
   if (await assistant.count()) {
@@ -68,6 +75,7 @@ export async function pollA() {
     }
   }
   await a.f1.preserveTab(a.tab);
+  if (expired && status !== "COMPLETE") throw new Error("Project A completion timed out after 30 seconds; do not resubmit");
   return status;
 }
 
