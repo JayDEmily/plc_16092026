@@ -6,6 +6,7 @@ let a;
 let response;
 let aStarted = false;
 let bStarted = false;
+let aDeadline;
 
 async function submit(surface, text) {
   await surface.composer.fill(text);
@@ -47,18 +48,21 @@ export async function startA(f1, preparedSurface) {
     await createProjectSurface({ f1, projectName: "Project A", memoryMode: "PROJECT_ONLY", projectInstructions: instructions });
   await submit(surface, task);
   a = surface;
+  aDeadline = Date.now() + 120000;
   await a.f1.preserveTab(a.tab);
 }
 
 export async function pollA() {
   if (!a) throw new Error("Project A has not been submitted");
   await new Promise(resolve => setTimeout(resolve, 10000));
+  if (Date.now() >= aDeadline) throw new Error("Project A completion timed out after 120 seconds; do not resubmit");
   const assistant = a.tab.playwright.locator('[data-message-author-role="assistant"]').last();
   let status = "WAITING";
   if (await assistant.count()) {
     const markdown = assistant.locator(".markdown");
     const latest = await (await markdown.count() === 1 ? markdown : assistant).innerText();
-    if (latest.endsWith("CCO_STATUS: COMPLETE")) {
+    const generating = await a.tab.playwright.getByRole("button", { name: "Stop answering", exact: true }).isVisible();
+    if (!generating && latest.endsWith("CCO_STATUS: COMPLETE")) {
       response = latest;
       status = "COMPLETE";
     }
