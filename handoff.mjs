@@ -15,12 +15,19 @@ function requireBrief(brief, label) {
   return brief;
 }
 
+export function readbackMatches(staged, expected) {
+  const withoutLineEndSpaces = value => value.replace(/[ \t]+(?=\n|$)/g, "");
+  const matches = value => staged === value || withoutLineEndSpaces(staged) === withoutLineEndSpaces(value);
+  // ProseMirror omits one terminal LF from a filled draft's paragraph readback.
+  return matches(expected) || (expected.endsWith("\n") && matches(expected.slice(0, -1)));
+}
+
 async function submit(surface, text) {
   await surface.composer.fill(text);
-  const exact = await surface.composer.evaluate((el, expected) => {
-    if (el.innerText === expected || el.textContent === expected) return true;
+  const readback = await surface.composer.evaluate((el, expected) => {
+    if (el.innerText === expected || el.textContent === expected) return expected;
     const paragraphs = Array.from(el.childNodes);
-    if (!paragraphs.length || paragraphs.some(p => p.nodeType !== 1 || p.tagName !== "P")) return false;
+    if (!paragraphs.length || paragraphs.some(p => p.nodeType !== 1 || p.tagName !== "P")) return null;
     const lines = paragraphs.map(p => {
       const parts = Array.from(p.childNodes).map(node => {
         if (node.nodeType === 3) return node.textContent;
@@ -40,12 +47,11 @@ async function submit(surface, text) {
       });
       return parts.includes(null) ? null : parts.join("");
     });
-    if (lines.includes(null)) return false;
-    const staged = lines.join("\n\n");
-    const withoutLineEndSpaces = value => value.replace(/[ \t]+(?=\n|$)/g, "");
-    return staged === expected || withoutLineEndSpaces(staged) === withoutLineEndSpaces(expected);
+    return lines.includes(null) ? null : lines.join("\n\n");
   }, text);
-  if (!exact) throw new Error("Exact composer readback mismatch; submission not attempted");
+  if (readback === null || !readbackMatches(readback, text)) {
+    throw new Error("Exact composer readback mismatch; submission not attempted");
+  }
   const send = surface.tab.playwright.getByRole("button", { name: "Send prompt", exact: true });
   await send.waitFor({ state: "visible", timeoutMs: 15000 });
   if (await send.count() !== 1 || !(await send.isEnabled())) throw new Error("Send control unavailable or ambiguous");
