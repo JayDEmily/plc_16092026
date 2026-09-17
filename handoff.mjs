@@ -1,6 +1,5 @@
 import { createProjectSurface } from "./f2_chatgpt_surface_control/surface_control.mjs";
 
-const COMPLETION_FOOTER = "complete";
 const PROJECT_INSTRUCTIONS = "Complete the exact task in the user prompt. End your response with a final line exactly equal to:\ncomplete";
 const POLL_MS = 10000;
 const DEADLINE_MS = 30000;
@@ -88,11 +87,17 @@ async function pollWorker(worker, label) {
     latest = await (await markdown.count() === 1 ? markdown : assistant).innerText();
     const generating = await surface.tab.playwright.getByRole("button", { name: "Stop answering", exact: true }).isVisible();
     const lines = latest.replace(/\r\n/g, "\n").split("\n");
-    if (!generating && lines.at(-1) === COMPLETION_FOOTER) status = "COMPLETE";
+    const finalLine = lines.filter(line => line.trim() !== "").at(-1)?.toLowerCase() ?? "";
+    if (!generating) {
+      if (finalLine.includes("error")) status = "error";
+      else if (finalLine.includes("incomplete")) status = "incomplete";
+      else if (finalLine.includes("complete")) status = "complete";
+    }
   }
 
   await surface.f1.preserveTab(surface.tab);
-  if (expired && status !== "COMPLETE") throw new Error(`${label} completion timed out after 30 seconds; do not resubmit`);
+  if (status === "incomplete" || status === "error") throw new Error(`${label} reported ${status}:\n${latest}`);
+  if (expired && status !== "complete") throw new Error(`${label} completion timed out after 30 seconds; do not resubmit`);
   return { status, latest };
 }
 
@@ -105,12 +110,12 @@ export async function startA(f1, brief, preparedSurface) {
 
 export async function pollA() {
   const result = await pollWorker(a, "Worker A");
-  if (result.status === "COMPLETE") aResponse = result.latest;
+  if (result.status === "complete") aResponse = result.latest;
   return result.status;
 }
 
 export async function startB(f1, brief, preparedSurface) {
-  if (aResponse === undefined) throw new Error("pollA() has not produced COMPLETE");
+  if (aResponse === undefined) throw new Error("pollA() has not produced complete");
   if (bStarted) throw new Error("Worker B has already been started");
   brief = requireBrief(brief, "WORKER_B_BRIEF");
   bStarted = true;

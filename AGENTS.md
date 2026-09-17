@@ -25,10 +25,10 @@ The current job input supplies two opaque strings: `WORKER_A_BRIEF` and `WORKER_
 2. Call `await f1.selectChrome()` once with `timeout_ms: 45000`; report `f1.browserIdentity`.
 3. Call `await handoff.startA(f1, WORKER_A_BRIEF)` once with `timeout_ms: 45000`.
 4. Call `await handoff.pollA()` in separate calls with `timeout_ms: 45000`.
-   `WAITING` authorises only another step-4 call. `COMPLETE` advances to step 5.
+   `WAITING` authorises only another step-4 call. `complete` retains the entire Worker A response and advances to step 5. `incomplete` or `error` stops the run and reports the entire Worker A response.
 5. Call `await handoff.startB(f1, WORKER_B_BRIEF)` once with `timeout_ms: 45000`.
 6. Call `await handoff.pollB()` in separate calls with `timeout_ms: 45000`.
-   `WAITING` authorises only another step-6 call. `COMPLETE` ends the job.
+   `WAITING` authorises only another step-6 call. `complete` ends the job. `incomplete` or `error` stops the run and reports the entire Worker B response.
 
-Worker completion is recognised by the runtime only when the worker response ends with a final line exactly equal to `complete`.
+The worker-facing terminal protocol has exactly three lowercase literals: `complete`, `incomplete`, and `error`. Inspect only the last non-empty line of a worker response, case-insensitively. If that line contains `error`, recognise `error`; otherwise, if it contains `incomplete`, recognise `incomplete`; otherwise, if it contains `complete`, recognise `complete`. No whole-line match, word boundary, exact spacing or punctuation, or absence of underscores or surrounding prose is required. If none appears, `WAITING` remains the internal polling condition.
 A timeout or any other result stops the run. Do not reset, rebootstrap, re-import to clear guards, repeat a submission or retry an ambiguous submission.
