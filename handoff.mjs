@@ -70,8 +70,9 @@ async function continueWorker(worker, label) {
       worker.reloadUrl !== undefined && url !== worker.reloadUrl) {
     throw new Error(`${label} is not in its saved conversation; do not resubmit`);
   }
-  const composer = surface.composer;
-  if (!composer) throw new Error(`${label} retained conversation composer is unavailable`);
+  const composer = surface.tab.playwright.locator(
+    '[contenteditable="true"][role="textbox"][aria-label="Chat with ChatGPT"]',
+  );
   await composer.waitFor({ state: "visible", timeoutMs: 15000 });
   if (await composer.count() !== 1 || await composer.evaluate(el => el.textContent !== "")) {
     throw new Error(`${label} conversation composer is unavailable, ambiguous, or nonempty`);

@@ -27,19 +27,23 @@ test("routes repeated return-to-A turns through the retained conversations exact
     let draft = "";
     let assistantCount = 0;
     let pending;
+    let stale = false;
+    const send = async () => {
+      sent.push([projectName, draft]);
+      if (assistantCount === 0) { latest = responses.shift(); assistantCount++; }
+      else pending = responses.shift();
+      draft = "";
+      stale = true;
+      url = `https://chatgpt.com/c/${projectName}`;
+    };
     const composer = {
       fill: async text => { draft = text; },
-      press: async () => {
-        sent.push([projectName, draft]);
-        if (assistantCount === 0) { latest = responses.shift(); assistantCount++; }
-        else pending = responses.shift();
-        draft = "";
-        url = `https://chatgpt.com/c/${projectName}`;
-      },
+      press: send,
       evaluate: async (fn, expected) => fn({ textContent: draft, innerText: draft, childNodes: [] }, expected),
       waitFor: async () => {},
-      count: async () => 1,
+      count: async () => stale ? 0 : 1,
     };
+    const liveComposer = { ...composer, press: send, count: async () => 1 };
     const assistant = { count: async () => 1, locator: () => ({ count: async () => 1, innerText: async () => latest }) };
     const tab = {
       url: async () => url,
@@ -51,7 +55,8 @@ test("routes repeated return-to-A turns through the retained conversations exact
           role === "heading" ? { count: async () => 1 } :
           name === "Stop answering" ? { isVisible: async () => false } :
           { waitFor: async () => {}, count: async () => 1, isEnabled: async () => true },
-        locator: () => ({ count: async () => assistantCount, last: () => assistant }),
+        locator: selector => selector.includes("contenteditable") ? liveComposer :
+          ({ count: async () => assistantCount, last: () => assistant }),
       },
     };
     return { f1, tab, composer, projectName, memoryMode: "PROJECT_ONLY", projectUrl: url,
