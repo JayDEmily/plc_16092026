@@ -40,7 +40,10 @@ async function submit(surface, text) {
       });
       return parts.includes(null) ? null : parts.join("");
     });
-    return !lines.includes(null) && lines.join("\n\n") === expected;
+    if (lines.includes(null)) return false;
+    const staged = lines.join("\n\n");
+    const withoutLineEndSpaces = value => value.replace(/[ \t]+(?=\n|$)/g, "");
+    return staged === expected || withoutLineEndSpaces(staged) === withoutLineEndSpaces(expected);
   }, text);
   if (!exact) throw new Error("Exact composer readback mismatch; submission not attempted");
   const send = surface.tab.playwright.getByRole("button", { name: "Send prompt", exact: true });
@@ -140,6 +143,17 @@ export async function startB(f1, brief, preparedSurface) {
   bStarted = true;
   const prompt = `${brief}\n\nWORKER_A_RESPONSE:\n${aResponse}`;
   b = await startWorker(f1, "Project B", prompt, preparedSurface);
+}
+
+export async function startBFromCompletedA(f1, brief, response) {
+  if (aStarted || bStarted || aResponse !== undefined) throw new Error("B continuation requires a fresh handoff module");
+  response = requireBrief(response, "WORKER_A_RESPONSE");
+  const finalLine = response.replace(/\r\n/g, "\n").split("\n").filter(line => line.trim() !== "").at(-1)?.toLowerCase() ?? "";
+  if (finalLine.includes("error") || finalLine.includes("incomplete") || !finalLine.includes("complete")) {
+    throw new Error("Worker A response does not report complete");
+  }
+  aResponse = response;
+  await startB(f1, brief);
 }
 
 export async function pollB() {
