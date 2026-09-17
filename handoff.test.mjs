@@ -44,7 +44,10 @@ test("routes repeated return-to-A turns through the retained conversations exact
     const tab = {
       url: async () => url,
       playwright: {
-        getByRole: (role, { name } = {}) => role === "main" ? { getByRole: () => composer } :
+        getByRole: (role, { name } = {}) => role === "main" ? { getByRole: () => ({
+          waitFor: async () => {}, count: async () => 2,
+          evaluate: async () => false,
+        }) } :
           role === "heading" ? { count: async () => 1 } :
           name === "Stop answering" ? { isVisible: async () => false } :
           { waitFor: async () => {}, count: async () => 1, isEnabled: async () => true },
