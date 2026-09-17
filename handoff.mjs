@@ -1,8 +1,8 @@
 import { createProjectSurface } from "./f2_chatgpt_surface_control/surface_control.mjs";
 
 const PROJECT_INSTRUCTIONS = "Complete the exact task in the user prompt.";
-const POLL_MS = 10000;
-const DEADLINE_MS = 30000;
+const POLL_MS = 15000;
+const DEADLINE_MS = 600000;
 
 let a;
 let b;
