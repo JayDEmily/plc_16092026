@@ -2,7 +2,7 @@ import { createProjectSurface } from "./f2_chatgpt_surface_control/surface_contr
 
 const PROJECT_INSTRUCTIONS = "Complete the exact task in the user prompt.";
 const POLL_MS = 15000;
-const DEADLINE_MS = 600000;
+const DEADLINE_MS = 2400000;
 
 let a;
 let b;
@@ -119,7 +119,7 @@ async function pollWorker(worker, label) {
 
   await surface.f1.preserveTab(surface.tab);
   if (status === "incomplete" || status === "error") throw new Error(`${label} reported ${status}:\n${latest}`);
-  if (expired && status !== "complete") throw new Error(`${label} completion timed out after 30 seconds; do not resubmit`);
+  if (expired && status !== "complete") throw new Error(`${label} completion timed out after 40 minutes; do not resubmit`);
   return { status, latest };
 }
 
