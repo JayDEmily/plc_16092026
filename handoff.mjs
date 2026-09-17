@@ -21,7 +21,26 @@ async function submit(surface, text) {
     if (el.innerText === expected || el.textContent === expected) return true;
     const paragraphs = Array.from(el.childNodes);
     if (!paragraphs.length || paragraphs.some(p => p.nodeType !== 1 || p.tagName !== "P")) return false;
-    return paragraphs.map(p => p.textContent).join("\n") === expected;
+    const lines = paragraphs.map(p => {
+      const parts = Array.from(p.childNodes).map(node => {
+        if (node.nodeType === 3) return node.textContent;
+        if (node.nodeType !== 1) return null;
+        if (node.tagName === "BR") return node.classList.contains("ProseMirror-trailingBreak") ? "" : "\n";
+        if (node.tagName === "IMG" && node.classList.contains("ProseMirror-separator") && node.alt === "") return "";
+        if (node.tagName !== "SPAN") return null;
+        if (node.hasAttribute("data-inline-selection-pill-cursor-target")) {
+          return node.getAttribute("aria-hidden") === "true" && node.textContent === "\uFEFF" ? "" : null;
+        }
+        if (node.hasAttribute("data-inline-selection-pill")) {
+          const value = node.textContent;
+          return node.getAttribute("data-reference-type") === "url" &&
+            node.getAttribute("data-id") === value && node.getAttribute("data-keyword") === value ? value : null;
+        }
+        return node.textContent;
+      });
+      return parts.includes(null) ? null : parts.join("");
+    });
+    return !lines.includes(null) && lines.join("\n\n") === expected;
   }, text);
   if (!exact) throw new Error("Exact composer readback mismatch; submission not attempted");
   const send = surface.tab.playwright.getByRole("button", { name: "Send prompt", exact: true });
