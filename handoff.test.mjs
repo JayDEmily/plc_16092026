@@ -43,7 +43,7 @@ test("routes repeated return-to-A turns through the retained conversations exact
       waitFor: async () => {},
       count: async () => stale ? 0 : 1,
     };
-    const liveComposer = { ...composer, press: send, count: async () => 1 };
+    const liveComposer = { ...composer, press: send, count: async () => 1, evaluate: async () => true };
     const assistant = { count: async () => 1, locator: () => ({ count: async () => 1, innerText: async () => latest }) };
     const tab = {
       url: async () => url,

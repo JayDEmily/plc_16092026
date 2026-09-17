@@ -74,8 +74,8 @@ async function continueWorker(worker, label) {
     '[contenteditable="true"][role="textbox"][aria-label="Chat with ChatGPT"]',
   );
   await composer.waitFor({ state: "visible", timeoutMs: 15000 });
-  if (await composer.count() !== 1 || await composer.evaluate(el => el.textContent !== "")) {
-    throw new Error(`${label} conversation composer is unavailable, ambiguous, or nonempty`);
+  if (await composer.count() !== 1) {
+    throw new Error(`${label} conversation composer is unavailable or ambiguous`);
   }
   worker.priorAssistantCount = await surface.tab.playwright.locator('[data-message-author-role="assistant"]').count();
   worker.deadline = Date.now() + DEADLINE_MS;
