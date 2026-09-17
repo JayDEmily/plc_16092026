@@ -1,6 +1,6 @@
 import { createProjectSurface } from "./f2_chatgpt_surface_control/surface_control.mjs";
 
-const PROJECT_INSTRUCTIONS = "Complete the exact task in the user prompt. End your response with a final line exactly equal to:\ncomplete";
+const PROJECT_INSTRUCTIONS = "Complete the exact task in the user prompt.";
 const POLL_MS = 10000;
 const DEADLINE_MS = 30000;
 
