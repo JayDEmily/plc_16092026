@@ -1,4 +1,4 @@
-import { createProjectSurface } from "./f2_chatgpt_surface_control/surface_control.mjs";
+import { createProjectSurface } from "../../f2_chatgpt_surface_control/surface_control.mjs";
 
 const PROJECT_INSTRUCTIONS = "Complete the exact task in the user prompt.";
 const POLL_MS = 15000;
