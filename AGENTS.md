@@ -17,7 +17,7 @@ Execution-only jobs do not modify source.
 For browser execution, run only from this repository root with a clean working tree. Record the current branch and HEAD; do not inspect or change other branches, history, parent directories or other repositories.
 Run `cco_browser_binding/scripts/resolve_browser_runtime.py`; require `status === "PASS"` and retain the exact successful resolver JSON.
 Use the trusted, persistent `mcp__node_repl__js` tool for all JavaScript imports and browser steps below, not shell Node, `functions.exec`, or another JavaScript REPL. Before step 1, require `typeof nodeRepl.rpc === "function"` in that same REPL; otherwise STOP without calling `bootstrap`.
-Resolve and import this repository's exact `cco_browser_binding/scripts/browser_binding.mjs` as `binding` and `handoff.mjs` as `handoff` in that REPL.
+Resolve and import this repository's exact `cco_browser_binding/scripts/browser_binding.mjs` as `binding` and `cco_browser_binding/scripts/handoff.mjs` as `handoff` in that REPL.
 Require `typeof binding.bootstrap === "function"` and `handoff.startA`, `handoff.pollA`, `handoff.startB`, `handoff.pollB`, `handoff.continueA`, `handoff.continueB` all to be functions.
 
 The current job input supplies two opaque strings: `WORKER_A_BRIEF` and `WORKER_B_BRIEF`. Use both verbatim. Do not source job instructions from repository examples or history.

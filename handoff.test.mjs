@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import * as handoff from "./handoff.mjs";
+import * as handoff from "./cco_browser_binding/scripts/handoff.mjs";
 
 test("accepts the editor representation of one terminal newline", () => {
   assert.equal(handoff.readbackMatches("first\n\nlast", "first\n\nlast\n"), true);
@@ -18,7 +18,7 @@ test("preserves the existing line-end spacing tolerance", () => {
 
 test("routes repeated return-to-A turns through the retained conversations exactly once", async t => {
   t.mock.method(globalThis, "setTimeout", callback => { callback(); return 0; });
-  const runtime = await import(`./handoff.mjs?loop=${Date.now()}`);
+  const runtime = await import(`./cco_browser_binding/scripts/handoff.mjs?loop=${Date.now()}`);
   const sent = [];
   const f1 = { preserveTab: async () => {} };
   function surface(projectName, responses) {
