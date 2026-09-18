@@ -53,7 +53,7 @@ The current job input supplies two opaque strings: `WORKER_A_BRIEF` and `WORKER_
 11. Call `await handoff.continueA()` once with `timeout_ms: 45000`. This sends exactly `Continue working.` to the retained Project A conversation. Return to step 10.
 12. Call `await handoff.continueB()` once with `timeout_ms: 45000`. This sends exactly `Check latest work in Google Drive.` to the retained Project B conversation. Return to step 7.
 
-Inspect only the last non-empty line of a worker response, case-insensitively. Use the permissive ordered recogniser in `handoff.mjs`: `error`, then `unfinished`, then `complete`, then `check latest work in Google Drive`, then `accomplished`. No whole-line match, exact spacing, exact punctuation or absence of surrounding prose is required. If no recognised outcome appears, `WAITING` remains the private internal polling condition and is never a worker-facing outcome.
+Inspect only the last non-empty line of a worker response, case-insensitively. The permissive ordered recogniser in `handoff.mjs` first rejects superseded `incomplete` so it cannot be swallowed by the `complete` substring, then recognises `error`, `unfinished`, `complete`, `check latest work in Google Drive`, and `accomplished` in that order. No whole-line match, exact spacing, exact punctuation or absence of surrounding prose is required. If no recognised outcome appears, `WAITING` remains the private internal polling condition and is never a worker-facing outcome.
 
 The fixed continuation prompts have distinct meanings:
 - same retained worker after `unfinished`: exactly `Continue working.`
