@@ -3,22 +3,32 @@ import { createProjectSurface } from "../../f2_chatgpt_surface_control/surface_c
 const PROJECT_INSTRUCTIONS = "Complete the exact task in the user prompt.";
 const POLL_MS = 15000;
 const DEADLINE_MS = 2400000;
-const CONTINUE_PROMPT = "Check latest work in Google Drive.";
+const WORK_CONTINUE_PROMPT = "Continue working.";
+const DRIVE_CONTINUE_PROMPT = "Check latest work in Google Drive.";
 
 let a;
 let b;
 let aResponse;
 let aStarted = false;
 let bStarted = false;
-let returnToA = false;
-let continuedA = false;
-let continueBReady = false;
 let aPolling = false;
 let bPolling = false;
+let phase = "INITIAL_A";
+let pendingContinuation;
 
 function requireBrief(brief, label) {
   if (typeof brief !== "string" || brief.length === 0) throw new Error(`${label} must be a nonempty string`);
   return brief;
+}
+
+function classifyFinalLine(text) {
+  const finalLine = text.replace(/\r\n/g, "\n").split("\n").filter(line => line.trim() !== "").at(-1)?.toLowerCase() ?? "";
+  if (finalLine.includes("error")) return "error";
+  if (finalLine.includes("unfinished")) return "unfinished";
+  if (finalLine.includes("complete")) return "complete";
+  if (finalLine.includes("check latest work in google drive")) return "check latest work in Google Drive";
+  if (finalLine.includes("accomplished")) return "accomplished";
+  return "WAITING";
 }
 
 export function readbackMatches(staged, expected) {
@@ -62,7 +72,8 @@ async function startWorker(f1, projectName, prompt, preparedSurface) {
   return { surface, deadline: Date.now() + DEADLINE_MS, reloadUrl: undefined, conversationUrl: undefined };
 }
 
-async function continueWorker(worker, label) {
+async function continueWorker(worker, label, prompt) {
+  if (!worker) throw new Error(`${label} has no retained conversation`);
   const surface = worker.surface;
   const url = await surface.tab.url();
   const parsed = new URL(url);
@@ -80,7 +91,7 @@ async function continueWorker(worker, label) {
   worker.priorAssistantCount = await surface.tab.playwright.locator('[data-message-author-role="assistant"]').count();
   worker.deadline = Date.now() + DEADLINE_MS;
   worker.reloadUrl = undefined;
-  await submit({ ...surface, composer }, CONTINUE_PROMPT);
+  await submit({ ...surface, composer }, prompt);
   if (await surface.tab.url() !== url) throw new Error(`${label} left its saved conversation after submission`);
   await surface.f1.preserveTab(surface.tab);
 }
@@ -125,33 +136,39 @@ async function pollWorker(worker, label) {
     const markdown = assistant.locator(".markdown");
     latest = await (await markdown.count() === 1 ? markdown : assistant).innerText();
     const generating = await surface.tab.playwright.getByRole("button", { name: "Stop answering", exact: true }).isVisible();
-    const lines = latest.replace(/\r\n/g, "\n").split("\n");
-    const finalLine = lines.filter(line => line.trim() !== "").at(-1)?.toLowerCase() ?? "";
-    if (!generating) {
-      if (finalLine.includes("error")) status = "error";
-      else if (finalLine.includes("incomplete")) status = "incomplete";
-      else if (finalLine.includes("complete")) status = "complete";
-      else if (label === "Worker B" && finalLine.includes("return to a")) status = "return to A";
-    }
+    if (!generating) status = classifyFinalLine(latest);
   }
 
   await surface.f1.preserveTab(surface.tab);
-  if (status === "incomplete" || status === "error") throw new Error(`${label} reported ${status}:\n${latest}`);
-  if (expired && status !== "complete" && status !== "return to A") throw new Error(`${label} completion timed out after 40 minutes; do not resubmit`);
+  if (status === "error") throw new Error(`${label} reported error:\n${latest}`);
+  if (expired && status === "WAITING") throw new Error("${label} completion timed out after 40 minutes; do not resubmit");
   if (status !== "WAITING") {
     const url = await surface.tab.url();
     const parsed = new URL(url);
     if (parsed.origin !== "https://chatgpt.com" || !parsed.pathname.includes("/c/") ||
         worker.conversationUrl !== undefined && url !== worker.conversationUrl) {
-      throw new Error(`${label} left its saved conversation; do not resubmit`);
+      throw new Error("${label} left its saved conversation; do not resubmit");
     }
     worker.conversationUrl = url;
   }
   return { status, latest };
 }
 
+function authorise(worker, reason) {
+  if (pendingContinuation !== undefined) throw new Error("A worker continuation is already authorised");
+  pendingContinuation = { worker, reason };
+}
+
+function consume(worker) {
+  if (pendingContinuation?.worker !== worker) throw new Error(`Worker ${worker} continuation is not authorised`);
+  const pending = pendingContinuation;
+  pendingContinuation = undefined;
+  return pending;
+}
+
 export async function startA(f1, brief, preparedSurface) {
   if (aStarted) throw new Error("Worker A has already been started");
+  if (phase !== "INITIAL_A" || bStarted) throw new Error("Worker A cannot be started after iterative routing begins");
   brief = requireBrief(brief, "WORKER_A_BRIEF");
   aStarted = true;
   a = await startWorker(f1, "Project A", brief, preparedSurface);
@@ -161,29 +178,43 @@ export async function startA(f1, brief, preparedSurface) {
 export async function pollA() {
   if (!aPolling) throw new Error("Worker A is not awaiting a response");
   const result = await pollWorker(a, "Worker A");
-  if (result.status === "complete") {
-    aPolling = false;
-    aResponse = result.latest;
-    if (continuedA) continueBReady = true;
+  if (result.status === "WAITING") return result.status;
+  aPolling = false;
+
+  if (phase === "INITIAL_A") {
+    if (result.status === "unfinished") authorise("A", "WORK");
+    else if (result.status === "complete") aResponse = result.latest;
+    else if (result.status === "accomplished") {}
+    else if (result.status === "check latest work in Google Drive") {
+      throw new Error("Worker A Drive baton is invalid before Worker B exists");
+    }
+    return result.status;
   }
+
+  if (result.status === "unfinished") authorise("A", "WORK");
+  else if (result.status === "check latest work in Google Drive") authorise("B", "DRIVE");
+  else if (result.status === "accomplished") {}
+  else if (result.status === "complete") throw new Error("Worker A complete is invalid after Worker B exists");
   return result.status;
 }
 
 export async function continueA() {
-  if (!returnToA) throw new Error("Worker A continuation is not authorised");
-  returnToA = false;
-  continuedA = true;
-  await continueWorker(a, "Worker A");
+  const pending = consume("A");
+  if (!a) throw new Error("Worker A has no retained conversation for this continuation");
+  const prompt = pending.reason === "WORK" ? WORK_CONTINUE_PROMPT : DRIVE_CONTINUE_PROMPT;
+  await continueWorker(a, "Worker A", prompt);
   aPolling = true;
 }
 
 export async function startB(f1, brief, preparedSurface) {
-  if (aResponse === undefined) throw new Error("pollA() has not produced complete");
+  if (aResponse === undefined) throw new Error("pollA() has not produced initial complete");
   if (bStarted) throw new Error("Worker B has already been started");
+  if (pendingContinuation !== undefined) throw new Error("Cannot start Worker B while a continuation is pending");
   brief = requireBrief(brief, "WORKER_B_BRIEF");
   bStarted = true;
   const prompt = `${brief}\n\nWORKER_A_RESPONSE:\n${aResponse}`;
   b = await startWorker(f1, "Project B", prompt, preparedSurface);
+  phase = "ITERATIVE";
   bPolling = true;
 }
 
@@ -191,9 +222,10 @@ export async function startBFromCompletedA(f1, brief, response) {
   if (aStarted || bStarted || aResponse !== undefined) throw new Error("B continuation requires a fresh handoff module");
   response = requireBrief(response, "WORKER_A_RESPONSE");
   const finalLine = response.replace(/\r\n/g, "\n").split("\n").filter(line => line.trim() !== "").at(-1)?.toLowerCase() ?? "";
-  if (finalLine.includes("error") || finalLine.includes("incomplete") || !finalLine.includes("complete")) {
-    throw new Error("Worker A response does not report complete");
+  if (finalLine.includes("incomplete") || classifyFinalLine(response) !== "complete") {
+    throw new Error("Worker A response does not report initial complete");
   }
+  aStarted = true;
   aResponse = response;
   await startB(f1, brief);
 }
@@ -201,15 +233,20 @@ export async function startBFromCompletedA(f1, brief, response) {
 export async function pollB() {
   if (!bPolling) throw new Error("Worker B is not awaiting a response");
   const result = await pollWorker(b, "Worker B");
-  if (result.status !== "WAITING") bPolling = false;
-  if (result.status === "return to A") returnToA = true;
+  if (result.status === "WAITING") return result.status;
+  bPolling = false;
+
+  if (result.status === "unfinished") authorise("B", "WORK");
+  else if (result.status === "check latest work in Google Drive") authorise("A", "DRIVE");
+  else if (result.status === "accomplished") {}
+  else if (result.status === "complete") throw new Error("Worker B complete is invalid after Worker B exists");
   return result.status;
 }
 
 export async function continueB() {
-  if (!continueBReady) throw new Error("Worker B continuation is not authorised");
-  continueBReady = false;
-  continuedA = false;
-  await continueWorker(b, "Worker B");
+  const pending = consume("B");
+  if (!b) throw new Error("Worker B has no retained conversation for this continuation");
+  const prompt = pending.reason === "WORK" ? WORK_CONTINUE_PROMPT : DRIVE_CONTINUE_PROMPT;
+  await continueWorker(b, "Worker B", prompt);
   bPolling = true;
 }

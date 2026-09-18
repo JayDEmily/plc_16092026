@@ -25,18 +25,40 @@ The current job input supplies two opaque strings: `WORKER_A_BRIEF` and `WORKER_
 1. Call `const f1 = await binding.bootstrap(resolution)` once with `timeout_ms: 45000`.
 2. Call `await f1.selectChrome()` once with `timeout_ms: 45000`; report `f1.browserIdentity`.
 3. Call `await handoff.startA(f1, WORKER_A_BRIEF)` once with `timeout_ms: 45000`.
-4. Call `await handoff.pollA()` in separate calls with `timeout_ms: 45000`.
-   `WAITING` authorises only another step-4 call. `complete` retains the entire Worker A response and advances to step 5. `incomplete` or `error` stops the run and reports the entire Worker A response.
-5. Call `await handoff.startB(f1, WORKER_B_BRIEF)` once with `timeout_ms: 45000`.
-6. Call `await handoff.pollB()` in separate calls with `timeout_ms: 45000`.
-   `WAITING` authorises only another step-6 call. `complete` ends the job. `return to A` advances to step 7. `incomplete` or `error` stops the run and reports the entire Worker B response.
-7. Call `await handoff.continueA()` once with `timeout_ms: 45000`. This sends exactly `Check latest work in Google Drive.` to the retained Project A conversation.
-8. Call `await handoff.pollA()` in separate calls with `timeout_ms: 45000`.
-   `WAITING` authorises only another step-8 call. `complete` advances to step 9. `incomplete` or `error` stops the run and reports the entire Worker A response.
-9. Call `await handoff.continueB()` once with `timeout_ms: 45000`. This sends exactly `Check latest work in Google Drive.` to the retained Project B conversation.
-10. Call `await handoff.pollB()` in separate calls with `timeout_ms: 45000`.
-    `WAITING` authorises only another step-10 call. `return to A` advances to step 7, repeating without a fixed iteration limit. `complete` ends the job. `incomplete` or `error` stops the run and reports the entire Worker B response.
+4. Call `await handoff.pollA()` in separate calls with `timeout_ms: 45000` for the initial Worker A phase.
+   - `WAITING` authorises only another step-4 call.
+   - `unfinished` advances to step 5.
+   - `complete` retains the entire initial Worker A response and advances to step 6.
+   - `accomplished` ends the job successfully.
+   - `error` stops the run and reports the entire Worker A response.
+   - `check latest work in Google Drive` is invalid before Worker B exists and stops the run.
+5. Call `await handoff.continueA()` once with `timeout_ms: 45000`. This sends exactly `Continue working.` to the retained Project A conversation. Return to step 4.
+6. Call `await handoff.startB(f1, WORKER_B_BRIEF)` once with `timeout_ms: 45000`. The handoff module appends the retained initial Worker A response to the original Worker B brief. Do not create Worker B again.
+7. Call `await handoff.pollB()` in separate calls with `timeout_ms: 45000`.
+   - `WAITING` authorises only another step-7 call.
+   - `unfinished` advances to step 8.
+   - `check latest work in Google Drive` advances to step 9.
+   - `accomplished` ends the job successfully.
+   - `error` stops the run and reports the entire Worker B response.
+   - `complete` is invalid after Worker B exists and stops the run.
+8. Call `await handoff.continueB()` once with `timeout_ms: 45000`. This sends exactly `Continue working.` to the retained Project B conversation. Return to step 7.
+9. Call `await handoff.continueA()` once with `timeout_ms: 45000`. This sends exactly `Check latest work in Google Drive.` to the retained Project A conversation. Advance to step 10.
+10. Call `await handoff.pollA()` in separate calls with `timeout_ms: 45000` for the iterative phase.
+    - `WAITING` authorises only another step-10 call.
+    - `unfinished` advances to step 11.
+    - `check latest work in Google Drive` advances to step 12.
+    - `accomplished` ends the job successfully.
+    - `error` stops the run and reports the entire Worker A response.
+    - `complete` is invalid after Worker B exists and stops the run.
+11. Call `await handoff.continueA()` once with `timeout_ms: 45000`. This sends exactly `Continue working.` to the retained Project A conversation. Return to step 10.
+12. Call `await handoff.continueB()` once with `timeout_ms: 45000`. This sends exactly `Check latest work in Google Drive.` to the retained Project B conversation. Return to step 7.
 
-Worker A's terminal protocol has exactly three lowercase literals: `complete`, `incomplete`, and `error`. Worker B also has `return to A`. Inspect only the last non-empty line of a worker response, case-insensitively. If that line contains `error`, recognise `error`; otherwise, if it contains `incomplete`, recognise `incomplete`; otherwise, if it contains `complete`, recognise `complete`; otherwise, for Worker B only, if it contains `return to a`, recognise `return to A`. No whole-line match, word boundary, exact spacing or punctuation, or absence of underscores or surrounding prose is required. If none appears, `WAITING` remains the internal polling condition, never a worker-facing outcome.
-Do not recreate either Project, rebootstrap the browser, or resend either original brief during iteration. Drive, Git, handoff-file, and task semantics belong only to the worker briefs and repositories, not Luna.
-A timeout or any other result stops the run. Do not reset, rebootstrap, re-import to clear guards, repeat a submission or retry an ambiguous submission.
+Inspect only the last non-empty line of a worker response, case-insensitively. Use the permissive ordered recogniser in `handoff.mjs`: `error`, then `unfinished`, then `complete`, then `check latest work in Google Drive`, then `accomplished`. No whole-line match, exact spacing, exact punctuation or absence of surrounding prose is required. If no recognised outcome appears, `WAITING` remains the private internal polling condition and is never a worker-facing outcome.
+
+The fixed continuation prompts have distinct meanings:
+- same retained worker after `unfinished`: exactly `Continue working.`
+- opposite retained worker after `check latest work in Google Drive`: exactly `Check latest work in Google Drive.`
+
+Do not recreate either Project, rebootstrap the browser, or resend either original brief during iteration. Drive, Git, handoff-file, tarball and substantive task semantics belong only to the worker briefs and repositories, not Luna.
+Do not call `startBFromCompletedA(...)` during the normal launch path. It remains a bounded recovery helper only; because it has no retained Worker A conversation, a later B-to-A Drive baton stops rather than reconstructing A.
+A timeout or any other result outside this contract stops the run. Do not reset, rebootstrap, re-import to clear guards, repeat a submission or retry an ambiguous submission.
