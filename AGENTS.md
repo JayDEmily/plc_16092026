@@ -28,12 +28,12 @@ The current job input supplies two opaque strings: `WORKER_A_BRIEF` and `WORKER_
 4. Call `await handoff.pollA()` in separate calls with `timeout_ms: 45000` for the initial Worker A phase.
    - `WAITING` authorises only another step-4 call.
    - `unfinished` advances to step 5.
-   - `complete` retains the entire initial Worker A response and advances to step 6.
+   - `complete` retains the entire Worker A response from the turn that returned `complete` and advances to step 6.
    - `accomplished` ends the job successfully.
    - `error` stops the run and reports the entire Worker A response.
    - `check latest work in Google Drive` is invalid before Worker B exists and stops the run.
 5. Call `await handoff.continueA()` once with `timeout_ms: 45000`. This sends exactly `Continue working.` to the retained Project A conversation. Return to step 4.
-6. Call `await handoff.startB(f1, WORKER_B_BRIEF)` once with `timeout_ms: 45000`. The handoff module appends the retained initial Worker A response to the original Worker B brief. Do not create Worker B again.
+6. Call `await handoff.startB(f1, WORKER_B_BRIEF)` once with `timeout_ms: 45000`. The handoff module appends the retained Worker A response that returned `complete` to the original Worker B brief. Do not create Worker B again.
 7. Call `await handoff.pollB()` in separate calls with `timeout_ms: 45000`.
    - `WAITING` authorises only another step-7 call.
    - `unfinished` advances to step 8.
