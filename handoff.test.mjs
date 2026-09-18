@@ -240,3 +240,46 @@ test("Worker B accomplished ends successfully", async t => {
   await runtime.startB(f1, "original B", b);
   assert.equal(await runtime.pollB(), "accomplished");
 });
+
+
+test("superseded incomplete is not misclassified as initial complete", async t => {
+  const runtime = await freshRuntime(t);
+  const sent = [];
+  const f1 = { preserveTab: async () => {} };
+  const a = makeSurface("Project A", ["A old terminal\nincomplete"], sent, f1);
+  globalThis.ccoF2 = a;
+  await runtime.startA(f1, "original A", a);
+  await assert.rejects(runtime.pollA(), /superseded/i);
+});
+
+test("iterative Worker A accomplished ends successfully", async t => {
+  const runtime = await freshRuntime(t);
+  const sent = [];
+  const f1 = { preserveTab: async () => {} };
+  const a = makeSurface("Project A", ["A initial\ncomplete", "A done\naccomplished"], sent, f1);
+  const b = makeSurface("Project B", ["B baton\ncheck latest work in Google Drive"], sent, f1);
+  globalThis.ccoF2 = a;
+  await runtime.startA(f1, "original A", a);
+  assert.equal(await runtime.pollA(), "complete");
+  globalThis.ccoF2 = b;
+  await runtime.startB(f1, "original B", b);
+  assert.equal(await runtime.pollB(), "check latest work in Google Drive");
+  await runtime.continueA();
+  assert.equal(await runtime.pollA(), "WAITING");
+  a.release();
+  assert.equal(await runtime.pollA(), "accomplished");
+});
+
+test("Drive phrase remains tolerant of repeated whitespace", async t => {
+  const runtime = await freshRuntime(t);
+  const sent = [];
+  const f1 = { preserveTab: async () => {} };
+  const a = makeSurface("Project A", ["A initial\ncomplete"], sent, f1);
+  const b = makeSurface("Project B", ["B baton\ncheck   latest work in Google Drive"], sent, f1);
+  globalThis.ccoF2 = a;
+  await runtime.startA(f1, "original A", a);
+  assert.equal(await runtime.pollA(), "complete");
+  globalThis.ccoF2 = b;
+  await runtime.startB(f1, "original B", b);
+  assert.equal(await runtime.pollB(), "check latest work in Google Drive");
+});

@@ -22,7 +22,9 @@ function requireBrief(brief, label) {
 }
 
 function classifyFinalLine(text) {
-  const finalLine = text.replace(/\r\n/g, "\n").split("\n").filter(line => line.trim() !== "").at(-1)?.toLowerCase() ?? "";
+  const finalLine = (text.replace(/\r\n/g, "\n").split("\n").filter(line => line.trim() !== "").at(-1)?.toLowerCase() ?? "")
+    .replace(/\s+/g, " ").trim();
+  if (finalLine.includes("incomplete")) return "INVALID_SUPERSEDED";
   if (finalLine.includes("error")) return "error";
   if (finalLine.includes("unfinished")) return "unfinished";
   if (finalLine.includes("complete")) return "complete";
@@ -140,14 +142,15 @@ async function pollWorker(worker, label) {
   }
 
   await surface.f1.preserveTab(surface.tab);
+  if (status === "INVALID_SUPERSEDED") throw new Error(`${label} reported a superseded terminal outcome:\n${latest}`);
   if (status === "error") throw new Error(`${label} reported error:\n${latest}`);
-  if (expired && status === "WAITING") throw new Error("${label} completion timed out after 40 minutes; do not resubmit");
+  if (expired && status === "WAITING") throw new Error(`${label} completion timed out after 40 minutes; do not resubmit`);
   if (status !== "WAITING") {
     const url = await surface.tab.url();
     const parsed = new URL(url);
     if (parsed.origin !== "https://chatgpt.com" || !parsed.pathname.includes("/c/") ||
         worker.conversationUrl !== undefined && url !== worker.conversationUrl) {
-      throw new Error("${label} left its saved conversation; do not resubmit");
+      throw new Error(`${label} left its saved conversation; do not resubmit`);
     }
     worker.conversationUrl = url;
   }
